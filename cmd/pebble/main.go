@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"flag"
 	"log"
 	"net/http"
@@ -30,7 +32,7 @@ type config struct {
 		DomainBlocklist []string
 
 		CertificateValidityPeriod uint64
-		RetryAfter struct {
+		RetryAfter                struct {
 			Authz int
 			Order int
 		}
@@ -76,7 +78,24 @@ func main() {
 	}
 
 	db := db.NewMemoryStore()
-	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod)
+	var caImpl *ca.CAImpl
+	if rootKeyPath := os.Getenv("PEBBLE_ROOT_CA_KEY"); rootKeyPath != "" {
+		rootKeyPem, err := os.ReadFile(rootKeyPath)
+		if err != nil {
+			cmd.FailOnError(err, "failed to load 'PEBBLE_ROOT_CA_KEY'")
+		}
+		block, _ := pem.Decode(rootKeyPem)
+		rootKey, _ := x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			cmd.FailOnError(err, "failed to parse pem at 'PEBBLE_ROOT_CA_KEY'")
+		}
+		caImpl = ca.NewFromCA(
+			rootKey,
+			logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod,
+		)
+	} else {
+		caImpl = ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod)
+	}
 	va := va.New(logger, c.Pebble.HTTPPort, c.Pebble.TLSPort, *strictMode, *resolverAddress)
 
 	for keyID, key := range c.Pebble.ExternalAccountMACKeys {
@@ -89,7 +108,7 @@ func main() {
 		cmd.FailOnError(err, "Failed to add domain to block list")
 	}
 
-	wfeImpl := wfe.New(logger, db, va, ca, *strictMode, c.Pebble.ExternalAccountBindingRequired, c.Pebble.RetryAfter.Authz, c.Pebble.RetryAfter.Order)
+	wfeImpl := wfe.New(logger, db, va, caImpl, *strictMode, c.Pebble.ExternalAccountBindingRequired, c.Pebble.RetryAfter.Authz, c.Pebble.RetryAfter.Order)
 	muxHandler := wfeImpl.Handler()
 
 	if c.Pebble.ManagementListenAddress != "" {
