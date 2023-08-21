@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -83,10 +85,14 @@ func main() {
 		rootKeyPem, err := os.ReadFile(rootKeyPath)
 		cmd.FailOnError(err, "failed to load 'PEBBLE_ROOT_CA_KEY'")
 		block, _ := pem.Decode(rootKeyPem)
-		rootKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		rootKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		cmd.FailOnError(err, "failed to parse pem at 'PEBBLE_ROOT_CA_KEY'")
+		rsaKey, isRSA := rootKey.(*rsa.PrivateKey)
+		if !isRSA {
+			cmd.FailOnError(fmt.Errorf("pebble requires an *rsa.PrivateKey for PEBBLE_ROOT_CA_KEY, got %T", rootKey), "")
+		}
 		caImpl = ca.NewFromCA(
-			rootKey,
+			rsaKey,
 			logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod,
 		)
 	} else {
