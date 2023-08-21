@@ -159,12 +159,7 @@ func (ca *CAImpl) makeRootCert(
 	return newCert, nil
 }
 
-func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
-	// Make a root private key
-	rk, err := makeKey()
-	if err != nil {
-		return nil, err
-	}
+func (ca *CAImpl) newRootIssuer(rk *rsa.PrivateKey, name string) (*issuer, error) {
 	subjectKeyID, err := makeSubjectKeyID(rk.Public())
 	if err != nil {
 		return nil, err
@@ -204,14 +199,14 @@ func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Sig
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 // The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
 // Any intermediates between the first intermediate and the root will have their keys and subjects generated automatically.
-func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int) *chain {
+func (ca *CAImpl) newChain(rk *rsa.PrivateKey, intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int) *chain {
 	if numIntermediates <= 0 {
 		panic("At least one intermediate must be present in the certificate chain")
 	}
 
 	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
 
-	root, err := ca.newRootIssuer(chainID)
+	root, err := ca.newRootIssuer(rk, chainID)
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new root issuer: %s", err.Error()))
 	}
@@ -352,25 +347,29 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 }
 
 func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint64) *CAImpl {
-	intermediateKey, err := makeKey()
+	rootKey, err := makeKey()
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 	}
 	return NewFromCA(
-		intermediateKey,
+		rootKey,
 		log, db, ocspResponderURL,
 		alternateRoots, chainLength, certificateValidityPeriod,
 	)
 }
 
 func NewFromCA(
-	intermediateKey *rsa.PrivateKey,
+	rk *rsa.PrivateKey,
 	log *log.Logger,
 	db *db.MemoryStore,
 	ocspResponderURL string,
 	alternateRoots, chainLength int,
 	certificateValidityPeriod uint64,
 ) *CAImpl {
+	intermediateKey, err := makeKey()
+	if err != nil {
+		panic(fmt.Sprintf("Error creating intermediate key: %v", err))
+	}
 	subjectKeyID, err := makeSubjectKeyID(intermediateKey.Public())
 	if err != nil {
 		panic(fmt.Sprintf("Error creating subject key ID: %v", err))
@@ -391,7 +390,7 @@ func NewFromCA(
 
 	ca.chains = make([]*chain, 1+alternateRoots)
 	for i := 0; i < len(ca.chains); i++ {
-		ca.chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength)
+		ca.chains[i] = ca.newChain(rk, intermediateKey, intermediateSubject, subjectKeyID, chainLength)
 	}
 
 	if certificateValidityPeriod != 0 && certificateValidityPeriod < 9223372038 {
