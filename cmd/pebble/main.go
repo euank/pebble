@@ -81,14 +81,10 @@ func main() {
 	var caImpl *ca.CAImpl
 	if rootKeyPath := os.Getenv("PEBBLE_ROOT_CA_KEY"); rootKeyPath != "" {
 		rootKeyPem, err := os.ReadFile(rootKeyPath)
-		if err != nil {
-			cmd.FailOnError(err, "failed to load 'PEBBLE_ROOT_CA_KEY'")
-		}
+		cmd.FailOnError(err, "failed to load 'PEBBLE_ROOT_CA_KEY'")
 		block, _ := pem.Decode(rootKeyPem)
-		rootKey, _ := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			cmd.FailOnError(err, "failed to parse pem at 'PEBBLE_ROOT_CA_KEY'")
-		}
+		rootKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		cmd.FailOnError(err, "failed to parse pem at 'PEBBLE_ROOT_CA_KEY'")
 		caImpl = ca.NewFromCA(
 			rootKey,
 			logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod,
