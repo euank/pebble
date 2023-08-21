@@ -165,7 +165,7 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	if err != nil {
 		return nil, err
 	}
-	subjectKeyID, err := makeSubjectKeyID(rk)
+	subjectKeyID, err := makeSubjectKeyID(rk.Public())
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate issuer: %v", err))
 		}
-		ski, err := makeSubjectKeyID(k)
+		ski, err := makeSubjectKeyID(k.Public())
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate subject key ID: %v", err))
 		}
